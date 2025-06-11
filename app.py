@@ -218,4 +218,4 @@ def create_brochure(company_name, url):
 
 # Example usage
 if __name__ == "__main__":
-    create_brochure("HuggingFace", "https://huggingface.co")
+    create_brochure("HSBC", "https://www.hsbc.co.in")
