@@ -46,5 +46,5 @@ docker-compose*
 *.tmp
 *.temp
 
-# Ignore gradio cache
+# Ignore .gradio directory
 .gradio

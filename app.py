@@ -2,13 +2,11 @@ import os
 import requests
 import json
 import time
-from typing import List, Tuple
+from typing import List
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 from anthropic import Anthropic
 from urllib.parse import urljoin
-import gradio as gr
-import tempfile
 
 # Load environment variables
 load_dotenv(override=True)
@@ -17,11 +15,18 @@ load_dotenv(override=True)
 api_key = os.getenv("ANTHROPIC_API_KEY")
 
 if not api_key:
+    print("ERROR: ANTHROPIC_API_KEY not found in environment variables.")
     print("Please add ANTHROPIC_API_KEY=your_key_here to your .env file")
+    exit(1)
+
+if api_key and len(api_key) > 10:
+    print("API key looks good so far")
+else:
+    print("There might be a problem with your API key? Please check your .env file.")
 
 # Use the current model instead of deprecated one
 MODEL = "claude-3-5-sonnet-20241022"
-client = Anthropic(api_key=api_key) if api_key else None
+client = Anthropic(api_key=api_key)
 
 # Enhanced headers to avoid 403 errors
 headers = {
@@ -106,11 +111,11 @@ def get_links_user_prompt(website):
     user_prompt += "Links:\n" + "\n".join(website.links[:50])  # Limit to first 50 links
     return user_prompt
 
-def get_links(url, progress=gr.Progress()):
+def get_links(url):
     try:
-        progress(0.2, desc="Analyzing website links...")
         website = Website(url)
         if not website.links:
+            print(f"No links found on {url}")
             return {"links": []}
             
         user_prompt = get_links_user_prompt(website)
@@ -131,25 +136,24 @@ def get_links(url, progress=gr.Progress()):
         return json.loads(content)
     except json.JSONDecodeError as e:
         print(f"Failed to parse JSON from Claude's response: {e}")
+        print(f"Response was: {content}")
         return {"links": []}
     except Exception as e:
         print(f"Error getting links: {e}")
         return {"links": []}
 
-def get_all_details(url, progress=gr.Progress()):
-    progress(0.3, desc="Scraping main website...")
+def get_all_details(url):
     result = "Landing page:\n"
     main_website = Website(url)
     result += main_website.get_contents()
     
-    progress(0.4, desc="Finding relevant pages...")
-    links_data = get_links(url, progress)
+    links_data = get_links(url)
+    print("Found links:", links_data)
     
     if "links" in links_data:
-        total_links = len(links_data["links"][:5])
-        for i, link in enumerate(links_data["links"][:5]):  # Limit to 5 additional pages
+        for link in links_data["links"][:5]:  # Limit to 5 additional pages
             try:
-                progress(0.5 + (i * 0.1), desc=f"Scraping {link['type']}...")
+                print(f"Scraping: {link['url']}")
                 result += f"\n\n{link['type']}\n"
                 result += Website(link["url"]).get_contents()
             except Exception as e:
@@ -171,12 +175,12 @@ Create a well-structured markdown document that includes:
 
 Make it professional, engaging, and informative. Use proper markdown formatting with headers, bullet points, and emphasis where appropriate."""
 
-def get_brochure_user_prompt(company_name, url, progress=gr.Progress()):
+def get_brochure_user_prompt(company_name, url):
     user_prompt = f"You are analyzing a company called: {company_name}\n"
     user_prompt += f"Website: {url}\n\n"
     user_prompt += "Here are the contents of its landing page and other relevant pages. Use this information to build a comprehensive company brochure in markdown format.\n\n"
     
-    details = get_all_details(url, progress)
+    details = get_all_details(url)
     # Instead of truncating, let's be smarter about content length
     if len(details) > 15000:
         user_prompt += details[:15000] + "\n\n[Content truncated for length]"
@@ -185,30 +189,9 @@ def get_brochure_user_prompt(company_name, url, progress=gr.Progress()):
     
     return user_prompt
 
-def create_brochure_gradio(company_name: str, url: str, progress=gr.Progress()) -> Tuple[str, str]:
-    """
-    Create brochure for Gradio interface
-    Returns: (brochure_content, download_file_path)
-    """
-    if not api_key:
-        return "❌ Error: ANTHROPIC_API_KEY not found. Please add it to your .env file.", None
-    
-    if not company_name.strip():
-        return "❌ Error: Please enter a company name.", None
-    
-    if not url.strip():
-        return "❌ Error: Please enter a website URL.", None
-    
-    # Add https:// if not present
-    if not url.startswith(('http://', 'https://')):
-        url = 'https://' + url
-    
+def create_brochure(company_name, url):
     try:
-        progress(0.1, desc="Starting brochure generation...")
-        
-        user_prompt = get_brochure_user_prompt(company_name, url, progress)
-        
-        progress(0.9, desc="Generating brochure with Claude...")
+        user_prompt = get_brochure_user_prompt(company_name, url)
         
         response = client.messages.create(
             model=MODEL,
@@ -220,142 +203,19 @@ def create_brochure_gradio(company_name: str, url: str, progress=gr.Progress()) 
         
         result = response.content[0].text
         
-        # Create a temporary file for download
-        temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8')
-        temp_file.write(result)
-        temp_file.close()
+        # Save to file instead of using IPython display
+        filename = f"{company_name.replace(' ', '_')}_brochure.md"
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(result)
         
-        progress(1.0, desc="Brochure generated successfully!")
-        
-        return result, temp_file.name
+        print(f"\nBrochure created successfully! Saved as: {filename}")
+        print("\n" + "="*50)
+        print(result)
+        print("="*50)
         
     except Exception as e:
-        error_msg = f"❌ Error creating brochure: {str(e)}"
-        return error_msg, None
+        print(f"Error creating brochure: {e}")
 
-# Create Gradio interface
-def create_gradio_interface():
-    with gr.Blocks(
-        title="🏢 AI Company Brochure Generator",
-        theme=gr.themes.Soft(),
-        css="""
-        .main-header {
-            text-align: center;
-            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            font-size: 2.5em;
-            font-weight: bold;
-            margin-bottom: 0.5em;
-        }
-        .subtitle {
-            text-align: center;
-            color: #666;
-            font-size: 1.2em;
-            margin-bottom: 2em;
-        }
-        """
-    ) as app:
-        
-        gr.HTML("""
-        <div class="main-header">🏢 AI Company Brochure Generator</div>
-        <div class="subtitle">Powered by Claude API - Transform any company website into a professional brochure</div>
-        """)
-        
-        with gr.Row():
-            with gr.Column(scale=1):
-                gr.HTML("<h3>📝 Input Details</h3>")
-                
-                company_name = gr.Textbox(
-                    label="Company Name",
-                    placeholder="e.g., HSBC, Google, Microsoft",
-                    value="",
-                    info="Enter the name of the company"
-                )
-                
-                website_url = gr.Textbox(
-                    label="Website URL",
-                    placeholder="e.g., hsbc.co.in or https://www.google.com",
-                    value="",
-                    info="Enter the company's website URL (with or without https://)"
-                )
-                
-                generate_btn = gr.Button(
-                    "🚀 Generate Brochure",
-                    variant="primary",
-                    size="lg"
-                )
-                
-                gr.HTML("""
-                <div style="margin-top: 2em; padding: 1em; background-color: #f0f9ff; border-radius: 8px; border-left: 4px solid #0ea5e9;">
-                    <h4>🤖 How it works:</h4>
-                    <ol>
-                        <li><strong>Agent 1:</strong> Scrapes the main website</li>
-                        <li><strong>Agent 2:</strong> Finds relevant pages (About, Careers, etc.)</li>
-                        <li><strong>Agent 3:</strong> Extracts content from selected pages</li>
-                        <li><strong>Agent 4:</strong> Creates a professional brochure</li>
-                    </ol>
-                </div>
-                """)
-            
-            with gr.Column(scale=2):
-                gr.HTML("<h3>📄 Generated Brochure</h3>")
-                
-                brochure_output = gr.Markdown(
-                    value="Your generated brochure will appear here...",
-                    height=600,
-                    show_copy_button=True
-                )
-                
-                download_file = gr.File(
-                    label="📥 Download Brochure",
-                    visible=False
-                )
-        
-        # Event handlers
-        def handle_generation(company, url):
-            if not company.strip() or not url.strip():
-                return "❌ Please fill in both company name and website URL.", gr.File(visible=False)
-            
-            brochure_content, file_path = create_brochure_gradio(company, url)
-            
-            if file_path:
-                return brochure_content, gr.File(value=file_path, visible=True)
-            else:
-                return brochure_content, gr.File(visible=False)
-        
-        generate_btn.click(
-            fn=handle_generation,
-            inputs=[company_name, website_url],
-            outputs=[brochure_output, download_file],
-            show_progress=True
-        )
-        
-        # Example inputs
-        gr.HTML("<h3>💡 Try these examples:</h3>")
-        
-        examples = [
-            ["HSBC", "hsbc.co.in"],
-            ["Anthropic", "anthropic.com"],
-            ["OpenAI", "openai.com"]
-        ]
-        
-        gr.Examples(
-            examples=examples,
-            inputs=[company_name, website_url],
-            outputs=[brochure_output, download_file],
-            fn=handle_generation,
-            cache_examples=False
-        )
-    
-    return app
-
-# Launch the application
+# Example usage
 if __name__ == "__main__":
-    app = create_gradio_interface()
-    app.launch(
-        share=True,  # Set to True to create a public link
-        server_name="0.0.0.0",  # Allow access from other devices on network
-        server_port=7860,
-        show_error=True
-    )
+    create_brochure("HSBC", "https://www.hsbc.co.in")
