@@ -1,0 +1,3 @@
+docker tag anthropic-brochure-app rksalgotra/anthropic-brochure-app:latest
+
+docker push rksalgotra/anthropic-brochure-app:latestˀˀˀ

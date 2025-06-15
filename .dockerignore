@@ -1,0 +1,50 @@
+# Ignore version control
+.git
+.gitignore
+.gitattributes
+
+# Ignore Python cache and virtual environments
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env
+venv
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.coverage
+.pytest_cache
+
+# Ignore IDE files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
+
+# Ignore documentation and markdown files (except README)
+*.md
+!README.md
+
+# Ignore Docker files themselves when building
+Dockerfile*
+docker-compose*
+
+# Ignore generated brochure files
+*_brochure.md
+
+# Ignore logs
+*.log
+
+# Ignore temporary files
+*.tmp
+*.temp
+
+# Ignore gradio cache
+.gradio
